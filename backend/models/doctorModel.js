@@ -9,11 +9,17 @@ const doctorSchema = new mongoose.Schema({
     experience : {type:String,required:true},
     degree : {type:String,required:true},
     about : {type:String,required:true},
+    description: { type: String, required: false },
     available : {type:Boolean,default:true},
     fees : {type:Number,required:true},
     address : {type:String,required:true},
     date : {type:Number,required:true},
-    slots_booked : {type:Object,default:{}},
+    attachmentUrl : { type: String, required: false },
+    slots_booked: {
+  type: [ { date: String, time: String } ],
+  default: []
+},
+    
 },{minimize:false})
 
 const doctorModel = mongoose.models.doctor || mongoose.model('doctor',doctorSchema)

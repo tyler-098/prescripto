@@ -8,6 +8,8 @@ import appointmentModel from '../models/appointmentModel.js'
 import razorpay from 'razorpay'
 
 
+
+
 // api to register user
 const registerUser = async (req,res) =>{
     try{
@@ -113,6 +115,7 @@ const updateProfile = async (req,res) =>{
             await userModel.findByIdAndUpdate(userId,{image:imageUrl})
         }
 
+
         res.json({success:true,message:"Profile Updated"})
 
     }
@@ -121,70 +124,78 @@ const updateProfile = async (req,res) =>{
     }
 }
 
+                                                 //*  API to book appointment 
 
-// API to book appointment 
-const bookAppointment = async (req,res) => {
+const bookAppointment = async (req, res) => {
+  try {
+    // const userId = req.userId; // ✅ Use from token
+    const { userId,docId, slotDate, slotTime, description } = req.body;
 
-
-    try{
-        const {userId,docId,slotDate,slotTime} = req.body
-
-        const docData = await doctorModel.findById(docId).select('-password')
-
-        if(!docData.available){
-            return res.json({success:false,message:"Doctor not Available"})
-        }
-
-        let slots_booked = docData.slots_booked
-
-        //checking for slot availability
-        if(slots_booked[slotDate]){
-            if(slots_booked[slotDate].includes(slotTime)){
-                return res.json({success:false,message:"Doctor not Available"})  
-            }
-            else{
-                slots_booked[slotDate].push(slotTime)
-            }
-        }
-        else{
-            slots_booked[slotDate] = []
-            slots_booked[slotDate].push(slotTime)
-        }
-
-        const userData = await userModel.findById(userId).select('-password')
-
-        delete docData.slots_booked
-
-        const appointmentData = {
-            userId,
-            docId,
-            userData,
-            docData,
-            amount:docData.fees,
-            slotTime,
-            slotDate,
-            date:Date.now()
-        }
-
-        const newAppointment = new appointmentModel(appointmentData)
-        await newAppointment.save()
-
-
-        // save new slots data in docData
-        await doctorModel.findByIdAndUpdate(docId,{slots_booked})
-
-        res.json({success:true,message:'Appointment Booked'})
+    const docData = await doctorModel.findById(docId).select('-password');
+    if (!docData.available) {
+      return res.json({ success: false, message: "Doctor not Available" });
     }
 
-    catch(error){
-        console.log(error)
-        res.json({success:false,message:error.message})
+let slots_booked = docData.slots_booked
+
+// Check if slot already booked
+const isSlotTaken = slots_booked.find(
+  (slot) => slot.date === slotDate && slot.time === slotTime
+);
+
+if (isSlotTaken) {
+  return res.json({ success: false, message: "Doctor not Available" });
+}
+
+// Book the new slot
+slots_booked.push({ date: slotDate, time: slotTime });
+
+
+    const userData = await userModel.findById(userId).select('-password');
+    delete docData.slots_booked;
+
+    // ✅ Upload attachment if it exists
+    let attachmentUrl = '';
+    if (req.file) {
+      const uploadResult = await cloudinary.uploader.upload(req.file.path, {
+        resource_type: 'auto',
+        folder: 'attachments',
+      });
+      attachmentUrl = uploadResult.secure_url;
     }
 
+    const appointmentData = {
+      userId,
+      docId,
+      userData,
+      docData,
+      amount: docData.fees,
+      slotTime,
+      slotDate,
+      description,
+      attachmentUrl,
+      date: Date.now()
+    };
+
+    const newAppointment = new appointmentModel(appointmentData);
+    await newAppointment.save();
+
+    // ✅ Save updated slots
+    await doctorModel.findByIdAndUpdate(docId, { slots_booked });
+
+    return res.json({ success: true, message: 'Appointment Booked' });
+
+  } catch (error) {
+    console.log(error);
+    return res.json({ success: false, message: error.message });
+  }
 }
 
 
-// API to get user appointment for frontend my-appointment page
+
+
+
+                            //* API to get user appointment for frontend my-appointment page
 
 const listAppointments = async (req,res) =>{
     try{
@@ -203,7 +214,7 @@ const listAppointments = async (req,res) =>{
 }
 
 
-// API to cancel appointment
+                                                    //* API to cancel appointment
 
 const cancelAppointment = async (req,res) =>{
     try{
@@ -237,15 +248,163 @@ const cancelAppointment = async (req,res) =>{
     }
 }
 
-// API to make payment of appointment using razorpay
-// const razorpayInstance = new razorpay({
-//     key_id:
-//     key_secret:
-// })
+                        //* Api to reschedule appointment
 
-// const paymentRazorPay = async(req,res) =>{
+const rescheduleAppointment = async (req, res) => {
+  try {
+     const { appointmentId, newSlotDate, newSlotTime } = req.body;
+const existingAppointment = await appointmentModel.findById(appointmentId)
+if (!existingAppointment) {
+  return res.status(404).json({ success: false, message: 'Appointment not found' });
+}
 
-// }
+if (existingAppointment.rescheduled) {
+  return res.status(400).json({ success: false, message: 'Appointment already rescheduled once' });
+}
+
+const doctor = await Doctor.findById(existingAppointment.docId);
+if (!doctor) {
+  return res.status(404).json({ success: false, message: 'Doctor not found' });
+}
+
+// Free old slot
+doctor.slots_booked = doctor.slots_booked.filter(
+  slot => !(slot.date === existingAppointment.slotDate && slot.time === existingAppointment.slotTime)
+);
+
+// Check if new slot is taken
+const isNewSlotTaken = doctor.slots_booked.find(
+  slot => slot.date === newSlotDate && slot.time === newSlotTime
+);
+if (isNewSlotTaken) {
+  return res.status(400).json({ success: false, message: 'New slot already booked' });
+}
+
+// Book new slot
+doctor.slots_booked.push({ date: newSlotDate, time: newSlotTime });
+
+// Update appointment
+existingAppointment.slotDate = newSlotDate;
+existingAppointment.slotTime = newSlotTime;
+existingAppointment.rescheduled = true;
+
+await doctor.save();
+await existingAppointment.save();
+
+res.status(200).json({
+  success: true,
+  message: 'Appointment rescheduled successfully',
+    appointment: {
+    ...existingAppointment.toObject(),
+    rescheduled: true, // Make sure it's explicitly included
+  }
+});
 
 
-export {registerUser,loginUser,getProfile,updateProfile,bookAppointment,listAppointments,cancelAppointment}
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+
+
+
+//* api to generate slot for next 7 days
+
+// Function to generate next 7 days' slots excluding already booked ones
+export const generateNext7DaysSlots = (slots_booked = []) => {
+  // Transform booked array to object format: { "13_4_2025": ["10:00 AM", ...] }
+  const bookedMap = {};
+  slots_booked.forEach(({ date, time }) => {
+  const upperTime = time ? time.toUpperCase() : null;
+    if (!bookedMap[date]) bookedMap[date] = [];
+    bookedMap[date].push(upperTime);
+  });
+
+  const slots = [];
+  const now = new Date();
+
+  for (let i = 0; i < 7; i++) {
+    const daySlots = [];
+    const current = new Date(now);
+    current.setDate(current.getDate() + i);
+
+    const day = current.getDate();
+    const month = current.getMonth() + 1;
+    const year = current.getFullYear();
+    const dateKey = `${day}_${month}_${year}`;
+
+    let slotStart = new Date(current);
+    let endTime = new Date(current);
+    endTime.setHours(21, 0, 0, 0); // Clinic closes at 9 PM
+
+    if (i === 0) {
+      const nowHour = now.getHours();
+      const nowMin = now.getMinutes();
+
+      slotStart.setHours(Math.max(10, nowHour));
+      slotStart.setMinutes(nowMin >= 30 ? 0 : 30);
+      if (nowMin >= 30) slotStart.setHours(slotStart.getHours() + 1);
+    } else {
+      slotStart.setHours(10, 0, 0, 0); // Start at 10 AM for other days
+    }
+
+    while (slotStart < endTime) {
+      const formatted = slotStart.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+      const isBooked = bookedMap[dateKey]?.includes(formatted);
+
+      if (!isBooked) {
+        daySlots.push({
+          datetime: new Date(slotStart),
+          time: formatted,
+        });
+      }
+
+      slotStart.setMinutes(slotStart.getMinutes() + 30);
+    }
+
+    slots.push({ date: dateKey, slots: daySlots });
+  }
+
+  return slots;
+};
+
+
+//* ============================= API to get Available slots ===============================
+
+import Doctor from '../models/doctorModel.js';
+
+const getAvailableSlots = async (req, res) => {
+  try {
+    const { doctorId } = req.body;
+    console.log("Doctor ID received:", req.body.doctorId);
+
+    const doctor = await Doctor.findById(doctorId);
+    console.log(doctor)
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor not found' });
+      
+    }
+
+    const slots_booked = doctor.slots_booked || {};
+    const availableSlots = generateNext7DaysSlots(slots_booked);
+
+    res.status(200).json({
+        success: true,
+    availableSlots: availableSlots,
+        });
+
+  } catch (error) {
+    console.error('Error in getAvailableSlots:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+
+export {registerUser,loginUser,getProfile,updateProfile,bookAppointment,listAppointments,cancelAppointment,rescheduleAppointment,getAvailableSlots}
