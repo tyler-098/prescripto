@@ -6,6 +6,7 @@ import connectCloudinary from './config/cloudinary.js'
 import adminRouter from './routes/adminRoute.js'
 import doctorRouter from './routes/doctorRoute.js'
 import userRouter from './routes/userRoute.js'
+import articleRouter from './routes/articleRoute.js'
 
 // app config 
 const app = express()
@@ -21,6 +22,8 @@ app.use(cors())
 app.use('/api/admin',adminRouter);
 app.use('/api/doctor',doctorRouter);
 app.use('/api/user',userRouter);
+app.use('/api/articles',articleRouter);
+console.log('Article routes registered');
 // 
 
 app.get('/',(req,res)=>{
