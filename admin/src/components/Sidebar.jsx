@@ -39,7 +39,7 @@ const Sidebar = () => {
                             `flex items-center gap-3 py-3.5 px-3 md:px-9 md:min-w-72 cursor-pointer ${isActive ? 'bg-[#F2F3FF] border-r-4 border-primary' : ''
                             }`
                         }
-                        to={'add-doctor'}
+                        to={'/add-doctor'}
                     >
                         <img src={assets1.add_icon} alt='' />
                         <p>Add Doctor</p>
@@ -61,14 +61,24 @@ const Sidebar = () => {
                             `flex items-center gap-3 py-3.5 px-3 md:px-9 md:min-w-72 cursor-pointer ${isActive ? 'bg-[#F2F3FF] border-r-4 border-primary' : ''
                             }`
                         }
+                        to={'/add-patient'}
+                    >
+                        <img src={assets1.add_icon} alt='' />
+                        <p>Add Patient</p>
+                    </NavLink>
+
+                    <NavLink
+                        className={({ isActive }) =>
+                            `flex items-center gap-3 py-3.5 px-3 md:px-9 md:min-w-72 cursor-pointer ${isActive ? 'bg-[#F2F3FF] border-r-4 border-primary' : ''
+                            }`
+                        }
                         to={'/add-article'}
                     >
-                        <img src={assets1.add_icon} alt='' /> {/* Reuse add_icon for consistency */}
+                        <img src={assets1.add_icon} alt='' />
                         <p>Add Article</p>
                     </NavLink>
                 </ul>
             )}
-            {/* Doctor section remains unchanged */}
             {dToken && (
                 <ul className='text-[#515151] mt-5'>
                     <NavLink

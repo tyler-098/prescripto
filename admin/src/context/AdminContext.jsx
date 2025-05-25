@@ -3,6 +3,8 @@ import axios from 'axios';
 import { toast } from 'react-toastify';
 
 export const AdminContext = createContext();
+import { useEffect } from "react";
+
 
 const AdminContextProvider = (props) => {
     const [aToken, setAToken] = useState(localStorage.getItem('aToken') ? localStorage.getItem('aToken') : '');
@@ -60,14 +62,24 @@ const AdminContextProvider = (props) => {
 
     const getAllAppointments = async () => {
         try {
-            const { data } = await axios.get(backendurl + '/api/admin/appointments', { headers: { aToken } });
+            const { data } = await axios.get(backendurl + '/api/admin/appointments', {
+                headers: { aToken }
+            });
             if (data.success) {
-                setAppointments(data.appointments);
-                console.log(data.appointments);
+                // Sort by booking date (newest first) and update state only if different
+                const sortedAppointments = data.appointments.sort((a, b) => new Date(b.date) - new Date(a.date));
+                setAppointments((prevAppointments) => {
+                    if (JSON.stringify(prevAppointments) !== JSON.stringify(sortedAppointments)) {
+                        console.log('Appointments updated:', sortedAppointments);
+                        return sortedAppointments;
+                    }
+                    return prevAppointments;
+                });
             } else {
                 toast.error(data.message);
             }
         } catch (error) {
+            console.log(error);
             toast.error(error.message);
         }
     };
@@ -100,6 +112,82 @@ const AdminContextProvider = (props) => {
         }
     };
 
+    const getQueuePosition = async (docId) => {
+        try {
+            const { data } = await axios.get(backendurl + `/api/admin/doctor-queue-position`, {
+                headers: { aToken },
+                params: { docId }
+            });
+            if (data.success) {
+                console.log('Queue position:', data.queuePosition, 'Available slots:', data.availableSlots, 'Tomorrow slots:', data.tomorrowSlots);
+                return { queuePosition: data.queuePosition, availableSlots: data.availableSlots, tomorrowSlots: data.tomorrowSlots };
+            } else {
+                toast.error(data.message);
+                return { queuePosition: null, availableSlots: [], tomorrowSlots: [] };
+            }
+        } catch (error) {
+            console.log('getQueuePosition error:', error);
+            toast.error(error.message);
+            return { queuePosition: null, availableSlots: [], tomorrowSlots: [] };
+        }
+    };
+
+
+    const addPatient = async (patientData) => {
+        try {
+            const { data } = await axios.post(
+                backendurl + '/api/admin/add-patient',
+                { ...patientData, bookingMode: 'queue' },
+                { headers: { aToken } }
+            );
+            if (data.success) {
+                toast.success('Patient added successfully');
+                await Promise.all([getAllAppointments(), getDashData()]);
+                return data.appointment;
+            } else {
+                toast.error(data.message);
+                return null;
+            }
+        } catch (error) {
+            console.log('addPatient error:', error);
+            toast.error(error.message);
+            return null;
+        }
+    };
+
+
+    const completeAppointment = async (appointmentId) => {
+        try {
+            const { data } = await axios.post(
+                backendurl + '/api/admin/complete-appointment',
+                { appointmentId },
+                {
+                    headers: { aToken }
+                });
+            if (data.success) {
+                toast.success(data.message);
+                getAllAppointments();
+            } else {
+                toast.error(data.message);
+            }
+        } catch (error) {
+            console.log(error);
+            toast.error(error.message);
+        }
+    };
+
+    useEffect(() => {
+        if (aToken) {
+            getAllAppointments(); // Initial fetch
+            const intervalId = setInterval(() => {
+                getAllAppointments();
+            }, 15000); // Poll every 30 seconds
+
+            // Cleanup interval on unmount
+            return () => clearInterval(intervalId);
+        }
+    }, [aToken]);
+
     const value = {
         aToken,
         setAToken,
@@ -114,6 +202,9 @@ const AdminContextProvider = (props) => {
         dashData,
         getDashData,
         cloudinaryConfig,
+        completeAppointment,
+        getQueuePosition,
+        addPatient
     };
 
     return (
